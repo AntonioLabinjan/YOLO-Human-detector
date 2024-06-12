@@ -1,8 +1,8 @@
-# PORADIT NA FINE-TUNINGU
 import cv2
 import numpy as np
 import threading
 import mediapipe as mp
+from collections import deque, Counter
 
 # Load YOLO model
 net = cv2.dnn.readNet("yolo-coco/yolov4-tiny.weights", "yolo-coco/yolov4-tiny.cfg")
@@ -13,7 +13,7 @@ with open("yolo-coco/coco.names", "r") as f:
 
 person_class_id = classes.index("person")
 
-video_path = "Big_test.mp4"  # Provide the path to your video file
+video_path = "TESTTEST.mp4"  # Provide the path to your video file
 cap = cv2.VideoCapture(video_path)
 
 # Initialize MediaPipe Pose model
@@ -27,8 +27,16 @@ prev_heights = []
 frame_width, frame_height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 resize_width, resize_height = 416, 416
 
+# Define thresholds and smoothing parameters
+MOTION_THRESHOLD = 1000
+SIGNIFICANT_VERTICAL_MOVEMENT = 20
+MODERATE_VERTICAL_MOVEMENT = 5
+SMOOTHING_WINDOW_SIZE = 5
+
+motion_status_window = deque(maxlen=SMOOTHING_WINDOW_SIZE)
+
 def process_frame(frame):
-    global prev_frame, prev_boxes, prev_heights
+    global prev_frame, prev_boxes, prev_heights, motion_status_window
 
     height, width, channels = frame.shape
     blob = cv2.dnn.blobFromImage(frame, 0.00392, (resize_width, resize_height), (0, 0, 0), True, crop=False)
@@ -70,13 +78,13 @@ def process_frame(frame):
                 _, frame_diff = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
                 motion_pixels = cv2.countNonZero(frame_diff)
 
-                if motion_pixels > 1000:  # Significant motion detected
+                if motion_pixels > MOTION_THRESHOLD:  # Significant motion detected
                     if i < len(prev_boxes):
                         prev_y = prev_boxes[i][1]
                         y_movement = abs(y - prev_y)
-                        if y_movement > 90:  # Significant vertical movement
+                        if y_movement > SIGNIFICANT_VERTICAL_MOVEMENT:  # Significant vertical movement
                             motion_status = "Jumping"
-                        elif y_movement > 5:  # Moderate vertical movement
+                        elif y_movement > MODERATE_VERTICAL_MOVEMENT:  # Moderate vertical movement
                             motion_status = "faster Walking"
                     else:
                         motion_status = "kinda moving"
@@ -104,7 +112,13 @@ def process_frame(frame):
                     if abs(avg_knee_y - avg_wrist_y) < 0.1 and avg_ankle_y > 0.9:  # Adjust these thresholds as needed
                         motion_status = "Crawling"
 
-            cv2.putText(frame, f"Motion: {motion_status}", (x + w - 250, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            # Add current status to the window
+            motion_status_window.append(motion_status)
+
+            # Apply temporal smoothing using the mode of the window
+            if motion_status_window:
+                most_common_status = Counter(motion_status_window).most_common(1)[0][0]
+                cv2.putText(frame, f"Motion: {most_common_status}", (x + w - 250, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
     prev_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     prev_boxes = boxes
