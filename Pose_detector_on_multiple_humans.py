@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
+import mediapipe as mp
 
-net = cv2.dnn.readNet("yolo-coco/yolov4.weights", "yolo-coco/yolov4.cfg")
+# Load YOLO model
+net = cv2.dnn.readNet("yolo-coco/yolov4-tiny.weights", "yolo-coco/yolov4-tiny.cfg")
 layer_names = net.getLayerNames()
 output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
 with open("yolo-coco/coco.names", "r") as f:
@@ -9,17 +11,20 @@ with open("yolo-coco/coco.names", "r") as f:
 
 person_class_id = classes.index("person")
 
-cap = cv2.VideoCapture(0)  
+cap = cv2.VideoCapture(0)  # Use webcam
+
+# Initialize MediaPipe Pose model
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose()
 
 prev_frame = None
+prev_boxes = []
+prev_heights = []
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+def process_frame(frame):
+    global prev_frame, prev_boxes, prev_heights
 
     height, width, channels = frame.shape
-
     blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
     net.setInput(blob)
     outs = net.forward(output_layers)
@@ -33,7 +38,7 @@ while True:
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.5 and class_id == person_class_id: 
+            if confidence > 0.5 and class_id == person_class_id:
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
                 w = int(detection[2] * width)
@@ -49,36 +54,72 @@ while True:
     for i in range(len(boxes)):
         if i in indexes:
             x, y, w, h = boxes[i]
+            roi = frame[y:y + h, x:x + w]
 
-            roi = frame[y:y+h, x:x+w]
+            motion_status = "really slow walking"  # Default status
 
             if prev_frame is not None and roi.size != 0:
                 gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-                frame_diff = cv2.absdiff(prev_frame[y:y+h, x:x+w], gray_roi)
+                frame_diff = cv2.absdiff(prev_frame[y:y + h, x:x + w], gray_roi)
                 _, frame_diff = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
-
                 motion_pixels = cv2.countNonZero(frame_diff)
-                motion_detected = motion_pixels > 80 # bilo je 3000
-                motion_status = "Moving" if motion_detected else "Standing still"
 
-                print("Motion status:", motion_status)
+                if motion_pixels > 1000:  # Significant motion detected
+                    if i < len(prev_boxes):
+                        prev_y = prev_boxes[i][1]
+                        y_movement = abs(y - prev_y)
+                        if y_movement > 90:  # Significant vertical movement
+                            motion_status = "Jumping"
+                        elif y_movement > 5:  # Moderate vertical movement
+                            motion_status = "faster Walking"
+                    else:
+                        motion_status = "kinda moving"
+                else:
+                    motion_status = "Standing still"  # No significant motion detected
 
-                cv2.putText(frame, f"Motion: {motion_status}", (x + w - 250 , y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                # Apply pose estimation for more precise crawling detection
+                roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+                results = pose.process(roi_rgb)
+                if results.pose_landmarks:
+                    landmarks = results.pose_landmarks.landmark
+                    # Extract y-coordinates of key points
+                    left_knee_y = landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y
+                    right_knee_y = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].y
+                    left_ankle_y = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].y
+                    right_ankle_y = landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].y
+                    left_wrist_y = landmarks[mp_pose.PoseLandmark.LEFT_WRIST].y
+                    right_wrist_y = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].y
+
+                    # Average y-coordinates of knees and wrists
+                    avg_knee_y = (left_knee_y + right_knee_y) / 2
+                    avg_ankle_y = (left_ankle_y + right_ankle_y) / 2
+                    avg_wrist_y = (left_wrist_y + right_wrist_y) / 2
+
+                    if abs(avg_knee_y - avg_wrist_y) < 0.1 and avg_ankle_y > 0.9:  # Adjust these thresholds as needed
+                        motion_status = "Crawling"
+
+            cv2.putText(frame, f"Motion: {motion_status}", (x + w - 250, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
     prev_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    prev_boxes = boxes
+    prev_heights = [box[3] for box in boxes]
 
     for i in range(len(boxes)):
         if i in indexes:
             x, y, w, h = boxes[i]
-            label = str(classes[class_ids[i]])
             confidence = confidences[i]
-            color = (0, 255, 0)  
+            color = (0, 255, 0)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    cv2.imshow("Image", frame)
+    return frame
 
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    processed_frame = process_frame(frame)
+    cv2.imshow("Image", processed_frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
