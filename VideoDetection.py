@@ -1,3 +1,4 @@
+# PORADIT NA FINE-TUNINGU
 import cv2
 import numpy as np
 import threading
@@ -73,7 +74,7 @@ def process_frame(frame):
                     if i < len(prev_boxes):
                         prev_y = prev_boxes[i][1]
                         y_movement = abs(y - prev_y)
-                        if y_movement > 40:  # Significant vertical movement
+                        if y_movement > 90:  # Significant vertical movement
                             motion_status = "Jumping"
                         elif y_movement > 5:  # Moderate vertical movement
                             motion_status = "faster Walking"
