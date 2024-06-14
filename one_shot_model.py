@@ -1,6 +1,4 @@
-# Donekle dela, opet poboljšat prompt
-# Imamo previše kinda moving => malo više precizirat klase, potencijalno ih dodat više
-
+# Još malo refine-at promptove
 # Install required packages
 !pip install -q pytube decord
 !pip install -q torch torchvision
@@ -51,7 +49,7 @@ prev_positions = []
 def classify_movement(roi, x, y, prev_x, prev_y):
     global prev_positions, motion_status_window
 
-    motion_status = "standing still"  # Default status
+    motion_status = "Standing Still"  # Default status
 
     if roi.size != 0:
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -91,6 +89,19 @@ def classify_movement(roi, x, y, prev_x, prev_y):
             if abs(avg_knee_y - avg_wrist_y) < 0.1 and avg_ankle_y > 0.9:
                 motion_status = "Crawling"
 
+            # Detect skipping based on alternating vertical and horizontal movements
+            if len(prev_positions) >= 2:
+                prev2_x, prev2_y = prev_positions[-2]
+                y_movement_2 = abs(prev_y - prev2_y)
+                x_movement_2 = abs(prev_x - prev2_x)
+                if (y_movement > SIGNIFICANT_VERTICAL_MOVEMENT and x_movement_2 > SIGNIFICANT_HORIZONTAL_MOVEMENT) or \
+                   (x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT and y_movement_2 > SIGNIFICANT_VERTICAL_MOVEMENT):
+                    motion_status = "Skipping"
+
+            # Detect limping based on asymmetrical movement
+            if abs(left_knee_y - right_knee_y) > 0.05 and abs(left_ankle_y - right_ankle_y) > 0.05:
+                motion_status = "Limping"
+
     return motion_status
 
 # Process each frame of the video
@@ -103,6 +114,7 @@ for idx, frame in enumerate(videoreader):
         print(f"Processing frame {idx}/{frame_count}")
 
     frame_rgb = cv2.cvtColor(frame.asnumpy(), cv2.COLOR_BGR2RGB)
+   
     results = model(frame_rgb)
     
     frame_with_classification = frame_rgb.copy()
