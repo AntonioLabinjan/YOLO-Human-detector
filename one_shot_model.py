@@ -40,17 +40,18 @@ pose = mp_pose.Pose()
 
 # Define parameters for motion classification
 motion_status_window = deque(maxlen=5)
-MOTION_THRESHOLD = 500  # Increased sensitivity for standing still
-SIGNIFICANT_VERTICAL_MOVEMENT = 15  # Increased sensitivity for jumping
-MODERATE_VERTICAL_MOVEMENT = 3  # Increased sensitivity for kinda moving
-SIGNIFICANT_HORIZONTAL_MOVEMENT = 15  # Sensitivity for horizontal movement
+MOTION_THRESHOLD = 500
+SIGNIFICANT_VERTICAL_MOVEMENT = 15
+MODERATE_VERTICAL_MOVEMENT = 3
+SIGNIFICANT_HORIZONTAL_MOVEMENT = 15
+MODERATE_HORIZONTAL_MOVEMENT = 5
 
 prev_positions = []
 
 def classify_movement(roi, x, y, prev_x, prev_y):
     global prev_positions, motion_status_window
 
-    motion_status = "really slow walking"  # Default status
+    motion_status = "standing still"  # Default status
 
     if roi.size != 0:
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -58,19 +59,20 @@ def classify_movement(roi, x, y, prev_x, prev_y):
         _, frame_diff = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
         motion_pixels = cv2.countNonZero(frame_diff)
 
-        if motion_pixels > MOTION_THRESHOLD:  # Significant motion detected
+        if motion_pixels > MOTION_THRESHOLD:
             y_movement = abs(y - prev_y)
             x_movement = abs(x - prev_x)
-            if y_movement > SIGNIFICANT_VERTICAL_MOVEMENT:  # Significant vertical movement
+            if y_movement > SIGNIFICANT_VERTICAL_MOVEMENT and x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:
+                motion_status = "Running"
+            elif y_movement > SIGNIFICANT_VERTICAL_MOVEMENT:
                 motion_status = "Jumping"
-            elif y_movement > MODERATE_VERTICAL_MOVEMENT or x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:  # Moderate vertical or significant horizontal movement
-                motion_status = "faster Walking"
+            elif x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:
+                motion_status = "Fast Walking"
+            elif y_movement > MODERATE_VERTICAL_MOVEMENT or x_movement > MODERATE_HORIZONTAL_MOVEMENT:
+                motion_status = "Walking"
             else:
-                motion_status = "kinda moving"
-        else:
-            motion_status = "standing still"  # No significant motion detected
+                motion_status = "Kinda Moving"
 
-        # Apply pose estimation for more precise crawling detection
         roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
         results = pose.process(roi_rgb)
         if results.pose_landmarks:
