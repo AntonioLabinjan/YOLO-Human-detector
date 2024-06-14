@@ -1,3 +1,6 @@
+# Donekle dela, opet poboljšat prompt
+# Imamo previše kinda moving => malo više precizirat klase, potencijalno ih dodat više
+
 # Install required packages
 !pip install -q pytube decord
 !pip install -q torch torchvision
@@ -7,7 +10,7 @@
 from pytube import YouTube
 import time
 
-youtube_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'  # Replace with your video URL
+youtube_url = 'https://youtu.be/WY9HKBe8dF0'  # Replace with your video URL
 yt = YouTube(youtube_url)
 streams = yt.streams.filter(file_extension='mp4')
 file_path = streams[0].download()
@@ -37,14 +40,15 @@ pose = mp_pose.Pose()
 
 # Define parameters for motion classification
 motion_status_window = deque(maxlen=5)
-MOTION_THRESHOLD = 1000
-SIGNIFICANT_VERTICAL_MOVEMENT = 20
-MODERATE_VERTICAL_MOVEMENT = 5
+MOTION_THRESHOLD = 500  # Increased sensitivity for standing still
+SIGNIFICANT_VERTICAL_MOVEMENT = 15  # Increased sensitivity for jumping
+MODERATE_VERTICAL_MOVEMENT = 3  # Increased sensitivity for kinda moving
+SIGNIFICANT_HORIZONTAL_MOVEMENT = 15  # Sensitivity for horizontal movement
 
-prev_y_positions = []
+prev_positions = []
 
-def classify_movement(roi, y, prev_y):
-    global prev_y_positions, motion_status_window
+def classify_movement(roi, x, y, prev_x, prev_y):
+    global prev_positions, motion_status_window
 
     motion_status = "really slow walking"  # Default status
 
@@ -56,9 +60,10 @@ def classify_movement(roi, y, prev_y):
 
         if motion_pixels > MOTION_THRESHOLD:  # Significant motion detected
             y_movement = abs(y - prev_y)
+            x_movement = abs(x - prev_x)
             if y_movement > SIGNIFICANT_VERTICAL_MOVEMENT:  # Significant vertical movement
                 motion_status = "Jumping"
-            elif y_movement > MODERATE_VERTICAL_MOVEMENT:  # Moderate vertical movement
+            elif y_movement > MODERATE_VERTICAL_MOVEMENT or x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:  # Moderate vertical or significant horizontal movement
                 motion_status = "faster Walking"
             else:
                 motion_status = "kinda moving"
@@ -85,13 +90,14 @@ def classify_movement(roi, y, prev_y):
                 motion_status = "Crawling"
 
     return motion_status
+
 # Process each frame of the video
 annotated_frames = []
 frame_count = len(videoreader)
 print(f"Processing {frame_count} frames...")
 
 for idx, frame in enumerate(videoreader):
-    if idx % 100 == 0: # stavit tu %1 da printa svaki frame hehe
+    if idx % 1 == 0:  # Print progress for each frame
         print(f"Processing frame {idx}/{frame_count}")
 
     frame_rgb = cv2.cvtColor(frame.asnumpy(), cv2.COLOR_BGR2RGB)
@@ -102,10 +108,10 @@ for idx, frame in enumerate(videoreader):
         x1, y1, x2, y2, conf, cls = map(int, result)
         if results.names[cls] == 'person':
             roi = frame_rgb[y1:y2, x1:x2]
-            prev_y = prev_y_positions.pop(0) if prev_y_positions else y1
-            motion_status = classify_movement(roi, y1, prev_y)
-            prev_y_positions.append(y1)
-            label = f'{motion_status} ({conf:.2f})'
+            prev_x, prev_y = prev_positions.pop(0) if prev_positions else (x1, y1)
+            motion_status = classify_movement(roi, x1, y1, prev_x, prev_y)
+            prev_positions.append((x1, y1))
+            label = f'{motion_status}'
             cv2.rectangle(frame_with_classification, (x1, y1), (x2, y2), (255, 0, 0), 2)
             cv2.putText(frame_with_classification, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
     annotated_frames.append(cv2.cvtColor(frame_with_classification, cv2.COLOR_RGB2BGR))
