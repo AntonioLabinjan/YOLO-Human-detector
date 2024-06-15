@@ -1,26 +1,26 @@
-# Još malo refine-at promptove
-# Install required packages
+# Još malo refine-at promptove...
+# Install stuff
 !pip install -q pytube decord
 !pip install -q torch torchvision
 !pip install -q mediapipe
 
-# Download the video using pytube
+# Download video from youtube
 from pytube import YouTube
 import time
 
-youtube_url = 'https://www.youtube.com/watch?v=_MO9B2jLOgw'  # Replace with your video URL
+youtube_url = 'https://youtu.be/MS7Z2O8cFxk'  # tu stavin bilo koji link
 yt = YouTube(youtube_url)
 streams = yt.streams.filter(file_extension='mp4')
 file_path = streams[0].download()
 
-# Read the video using decord
+# pregled videa
 from decord import VideoReader, cpu
 import numpy as np
 
 videoreader = VideoReader(file_path, num_threads=1, ctx=cpu(0))
 video_fps = videoreader.get_avg_fps()
 
-# Load YOLOv5 model
+# Loadamo model
 import torch
 import cv2
 
@@ -29,20 +29,20 @@ print("Loading YOLOv5 model...")
 model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
 print(f"Model loaded in {time.time() - start_time:.2f} seconds")
 
-# Initialize MediaPipe Pose model
+# Inicijaliziramo model
 import mediapipe as mp
 from collections import deque, Counter
 
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 
-# Define parameters for motion classification
+# Definiranje parametara (ovo bi se još dalo malo popeglat)
 motion_status_window = deque(maxlen=5)
 MOTION_THRESHOLD = 500
 SIGNIFICANT_VERTICAL_MOVEMENT = 10
 MODERATE_VERTICAL_MOVEMENT = 4
 LOW_VERTICAL_MOVEMENT = 1
-SIGNIFICANT_HORIZONTAL_MOVEMENT = 15
+SIGNIFICANT_HORIZONTAL_MOVEMENT = 11
 MODERATE_HORIZONTAL_MOVEMENT = 4
 LOW_HORIZONTAL_MOVEMENT = 1
 
@@ -51,7 +51,7 @@ prev_positions = []
 def classify_movement(roi, x, y, prev_x, prev_y):
     global prev_positions, motion_status_window
 
-    motion_status = "TBD"  # Default status
+    motion_status = "TBD"  # Default status (ako ne prepozna current kretanje kao neko od definiranih)
 
     if roi.size != 0:
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -95,7 +95,6 @@ def classify_movement(roi, x, y, prev_x, prev_y):
             if abs(avg_knee_y - avg_wrist_y) < 0.1 and avg_ankle_y > 0.9:
                 motion_status = "Crawling"
 
-            # Detect skipping based on alternating vertical and horizontal movements
             if len(prev_positions) >= 2:
                 prev2_x, prev2_y = prev_positions[-2]
                 y_movement_2 = abs(prev_y - prev2_y)
@@ -104,19 +103,19 @@ def classify_movement(roi, x, y, prev_x, prev_y):
                    (x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT and y_movement_2 > SIGNIFICANT_VERTICAL_MOVEMENT):
                     motion_status = "Skipping"
 
-            # Detect limping based on asymmetrical movement
+            # asimetrično kretanje
             if abs(left_knee_y - right_knee_y) > 0.05 and abs(left_ankle_y - right_ankle_y) > 0.05:
                 motion_status = "Limping"
 
     return motion_status
 
-# Process each frame of the video
+# Procesiramo frameove
 annotated_frames = []
 frame_count = len(videoreader)
 print(f"Processing {frame_count} frames...")
 
 for idx, frame in enumerate(videoreader):
-    if idx % 1 == 0:  # Print progress for each frame
+    if idx % 1 == 0:  # ovo mi ne treba, doda san napušto, čisto da vidin kako nepreduje
         print(f"Processing frame {idx}/{frame_count}")
 
     frame_rgb = cv2.cvtColor(frame.asnumpy(), cv2.COLOR_BGR2RGB)
@@ -136,7 +135,7 @@ for idx, frame in enumerate(videoreader):
             cv2.putText(frame_with_classification, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
     annotated_frames.append(cv2.cvtColor(frame_with_classification, cv2.COLOR_RGB2BGR))
 
-# Save the annotated video
+# Save 
 output_video_path = 'annotated_video.mp4'
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 height, width, _ = annotated_frames[0].shape
