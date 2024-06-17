@@ -8,7 +8,7 @@
 from pytube import YouTube
 import time
 
-youtube_url = 'https://youtu.be/MS7Z2O8cFxk'  # tu stavin bilo koji link
+youtube_url = 'https://www.youtube.com/watch?v=vqqt5p0q-eU'  # tu stavin bilo koji link
 yt = YouTube(youtube_url)
 streams = yt.streams.filter(file_extension='mp4')
 file_path = streams[0].download()
@@ -39,7 +39,7 @@ pose = mp_pose.Pose()
 # Definiranje parametara (ovo bi se još dalo malo popeglat)
 motion_status_window = deque(maxlen=5)
 MOTION_THRESHOLD = 500
-SIGNIFICANT_VERTICAL_MOVEMENT = 10
+SIGNIFICANT_VERTICAL_MOVEMENT = 8 # bilo je 10 i prepoznaje dosta slabo
 MODERATE_VERTICAL_MOVEMENT = 4
 LOW_VERTICAL_MOVEMENT = 1
 SIGNIFICANT_HORIZONTAL_MOVEMENT = 11
@@ -73,7 +73,7 @@ def classify_movement(roi, x, y, prev_x, prev_y):
             elif y_movement > LOW_VERTICAL_MOVEMENT and y_movement < MODERATE_VERTICAL_MOVEMENT and x_movement > LOW_HORIZONTAL_MOVEMENT and x_movement < MODERATE_HORIZONTAL_MOVEMENT:
                 motion_status = "Slow Walking"
             elif x_movement == 0 and y_movement == 0:
-                motion_status = "Stanidng Still"
+                motion_status = "StandIng Still"
             else:
                 motion_status = "Kinda Moving"
 
