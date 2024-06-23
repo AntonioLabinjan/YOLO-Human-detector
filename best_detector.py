@@ -1,14 +1,12 @@
 # Install necessary packages
-!pip install -q pytube decord
-!pip install -q torch torchvision
-!pip install -q mediapipe
-!pip install -q ultralytics
+!pip install -q pytube decord torch torchvision mediapipe ultralytics nvidia-pyindex nvidia-tensorrt
 
+# previše runninga dobivan => smanjit nešto
 # Download video from YouTube
 from pytube import YouTube
 import time
 
-youtube_url = 'https://www.youtube.com/watch?v=C3DjXmUCcMQ'  # Replace with your desired link
+youtube_url = 'https://www.youtube.com/watch?v=b8QZJ5ZodTs'  # Replace with your desired link
 yt = YouTube(youtube_url)
 streams = yt.streams.filter(file_extension='mp4')
 file_path = streams[0].download()
@@ -16,18 +14,17 @@ file_path = streams[0].download()
 # Preview the video
 from decord import VideoReader, cpu
 import numpy as np
+import cv2
 
-videoreader = VideoReader(file_path, num_threads=1, ctx=cpu(0))
+videoreader = VideoReader(file_path, num_threads=4, ctx=cpu(0))
 video_fps = videoreader.get_avg_fps()
 
 # Load the YOLOv8 model
-import torch
-import cv2
 from ultralytics import YOLO
 
 start_time = time.time()
 print("Loading YOLOv8 model...")
-model = YOLO('yolov8s.pt')
+model = YOLO('yolov8s.pt')  # Use the YOLOv8 model
 print(f"Model loaded in {time.time() - start_time:.2f} seconds")
 
 # Initialize MediaPipe Pose
@@ -40,13 +37,13 @@ pose = mp_pose.Pose()
 # Define parameters
 motion_status_window = deque(maxlen=5)
 MOTION_THRESHOLD = 500
-SIGNIFICANT_VERTICAL_MOVEMENT = 8
-MODERATE_VERTICAL_MOVEMENT = 4
-LOW_VERTICAL_MOVEMENT = 1
-SIGNIFICANT_HORIZONTAL_MOVEMENT = 11
-MODERATE_HORIZONTAL_MOVEMENT = 4
-LOW_HORIZONTAL_MOVEMENT = 1
-
+SIGNIFICANT_VERTICAL_MOVEMENT = 150  # Increased threshold for significant vertical movement ovo san diga, bilo je manje
+MODERATE_VERTICAL_MOVEMENT = 20     # Increased threshold for moderate vertical movement
+LOW_VERTICAL_MOVEMENT = 10          # Increased threshold for low vertical movement
+SIGNIFICANT_HORIZONTAL_MOVEMENT = 60 # Increased threshold for significant horizontal movement
+MODERATE_HORIZONTAL_MOVEMENT = 20    # Increased threshold for moderate horizontal movement
+LOW_HORIZONTAL_MOVEMENT = 10         # Increased threshold for low horizontal movement
+BIG_VERTICAL_MOVEMENT = 80
 prev_positions = []
 
 def classify_movement(roi, x, y, prev_x, prev_y):
@@ -65,9 +62,9 @@ def classify_movement(roi, x, y, prev_x, prev_y):
             x_movement = abs(x - prev_x)
             if y_movement > SIGNIFICANT_VERTICAL_MOVEMENT and x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:
                 motion_status = "Running"
-            elif y_movement > SIGNIFICANT_VERTICAL_MOVEMENT:
+            elif y_movement > BIG_VERTICAL_MOVEMENT:
                 motion_status = "Jumping"
-            elif x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:
+            elif y_movement > SIGNIFICANT_VERTICAL_MOVEMENT and x_movement > SIGNIFICANT_HORIZONTAL_MOVEMENT:
                 motion_status = "Fast Walking"
             elif y_movement > MODERATE_VERTICAL_MOVEMENT or x_movement > MODERATE_HORIZONTAL_MOVEMENT:
                 motion_status = "Walking"
@@ -115,8 +112,7 @@ frame_count = len(videoreader)
 print(f"Processing {frame_count} frames...")
 
 for idx, frame in enumerate(videoreader):
-    if idx % 1 == 0:
-        print(f"Processing frame {idx}/{frame_count}")
+    print(f"Processing frame {idx}/{frame_count}")
 
     frame_rgb = cv2.cvtColor(frame.asnumpy(), cv2.COLOR_BGR2RGB)
     results = model(frame_rgb)
@@ -132,18 +128,21 @@ for idx, frame in enumerate(videoreader):
             motion_status = classify_movement(roi, x1, y1, prev_x, prev_y)
             prev_positions.append((x1, y1))
             label = f'{motion_status}'
-            cv2.rectangle(frame_with_classification, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(frame_with_classification, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            cv2.rectangle(frame_with_classification, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Green bounding box
+            cv2.putText(frame_with_classification, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)  # Smaller text
     annotated_frames.append(cv2.cvtColor(frame_with_classification, cv2.COLOR_RGB2BGR))
 
-# Save the annotated video
+# Ensure the output video maintains the same length as the original
 output_video_path = 'annotated_video.mp4'
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 height, width, _ = annotated_frames[0].shape
 out = cv2.VideoWriter(output_video_path, fourcc, video_fps, (width, height))
 
-for frame in annotated_frames:
+# Add duplicate frames if needed to maintain the original video length
+for idx, frame in enumerate(annotated_frames):
     out.write(frame)
+    if idx % 5 != 0:  
+        out.write(frame)
 
 out.release()
 
